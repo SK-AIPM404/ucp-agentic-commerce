@@ -208,21 +208,43 @@ export async function fetchShopifyCatalog(
   const all: ShopifyProduct[] = []
   for (let page = 1; page <= maxPages; page++) {
     const url = `${origin}/products.json?limit=250&page=${page}`
-    const res = await fetch(url, {
-      signal: opts?.signal,
-      headers: { Accept: "application/json" },
-      // No-store is appropriate; the AI Shelf operator hits this on demand.
-      cache: "no-store",
-    })
+    let res: Response
+    try {
+      res = await fetch(url, {
+        signal: opts?.signal,
+        headers: {
+          Accept: "application/json",
+          // Some Shopify edges 403 the default Node UA.
+          "User-Agent":
+            "Mozilla/5.0 (compatible; AI-Shelf/1.0; +https://ai-shelf.dev)",
+        },
+        redirect: "follow",
+        cache: "no-store",
+      })
+    } catch (err) {
+      throw new Error(
+        `Could not reach ${origin}. ${err instanceof Error ? err.message : ""}`.trim(),
+      )
+    }
+
     if (!res.ok) {
       if (page === 1) {
         throw new Error(
-          `Failed to fetch ${url}: ${res.status}. Is this a public Shopify store?`,
+          `${origin}/products.json returned ${res.status}. This site may not be a public Shopify store.`,
         )
       }
       break
     }
-    const data = (await res.json()) as { products?: ShopifyProduct[] }
+
+    const text = await res.text()
+    let data: { products?: ShopifyProduct[] }
+    try {
+      data = JSON.parse(text) as { products?: ShopifyProduct[] }
+    } catch {
+      throw new Error(
+        `${origin}/products.json did not return JSON. This site is likely not powered by Shopify.`,
+      )
+    }
     const products = data.products || []
     all.push(...products)
     if (products.length < 250) break
@@ -230,7 +252,7 @@ export async function fetchShopifyCatalog(
 
   if (all.length === 0) {
     throw new Error(
-      "No products returned. Confirm this is a public Shopify store.",
+      "No products returned. Confirm this is a public Shopify storefront.",
     )
   }
 

@@ -6,6 +6,9 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  // v0 preview iframes use vusercontent.net subdomains. Allow them so HMR works
+  // and edits actually reach the running preview.
+  allowedDevOrigins: ["*.vusercontent.net", "*.v0.app", "*.vercel.app"],
   async rewrites() {
     return [
       {
