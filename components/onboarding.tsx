@@ -136,11 +136,6 @@ export function Onboarding({ onConnected }: Props) {
       <div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/40 to-background pointer-events-none" />
 
       <div className="relative mx-auto flex min-h-screen max-w-2xl flex-col items-center justify-center px-6 py-16">
-        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-border/60 bg-secondary/40 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-          <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-          UCP 2026-04-08 · Track 2
-        </div>
-
         <h1 className="text-balance text-center text-4xl font-medium leading-tight tracking-tight md:text-5xl">
           Make your store
           <br />

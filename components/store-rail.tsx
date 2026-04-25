@@ -1,8 +1,8 @@
 "use client"
 
-import { useState } from "react"
-import { Copy, ExternalLink, RotateCcw, Store } from "lucide-react"
+import { ExternalLink, RotateCcw, Store } from "lucide-react"
 import type { IngestResult } from "@/components/onboarding"
+import { UcpExplorer } from "@/components/ucp-explorer"
 
 // Generic fallback prompts only used if AI analysis fails AND the catalog has
 // no real categories to ground a heuristic. Brand-specific prompts are
@@ -21,36 +21,12 @@ type Props = {
 }
 
 export function StoreRail({ store, onReset }: Props) {
-  const [manifestOpen, setManifestOpen] = useState(false)
-  const [manifestJson, setManifestJson] = useState<string>("")
-  const [copied, setCopied] = useState(false)
-
   // Brand-specific prompts come from the AI analysis run at ingest time.
   const prompts =
     store.analysis?.prompts && store.analysis.prompts.length > 0
       ? store.analysis.prompts
       : FALLBACK_PROMPTS
   const tagline = store.analysis?.tagline?.trim()
-
-  async function loadManifest() {
-    setManifestOpen((v) => !v)
-    if (!manifestJson) {
-      try {
-        const res = await fetch(store.manifestUrl)
-        const data = await res.json()
-        setManifestJson(JSON.stringify(data, null, 2))
-      } catch {
-        setManifestJson("{ /* failed to load manifest */ }")
-      }
-    }
-  }
-
-  async function copyManifest() {
-    if (!manifestJson) return
-    await navigator.clipboard.writeText(manifestJson)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
-  }
 
   return (
     <aside className="flex h-full flex-col overflow-y-auto chat-scroll border-l border-border bg-background/40 p-5">
@@ -187,39 +163,17 @@ export function StoreRail({ store, onReset }: Props) {
         </ul>
       </div>
 
-      {/* Manifest viewer */}
+      {/* UCP Explorer — every published endpoint, not just the manifest. */}
       <div className="mt-6">
-        <button
-          type="button"
-          onClick={loadManifest}
-          className="w-full rounded-md border border-border bg-secondary/40 px-3 py-2 text-left font-mono text-[11px] text-foreground/80 hover:border-primary/40"
-        >
-          {manifestOpen ? "− Hide" : "+ View"} /.well-known/ucp
-        </button>
-        {manifestOpen ? (
-          <div className="mt-2 overflow-hidden rounded-md border border-border bg-popover text-popover-foreground">
-            <div className="flex items-center justify-between border-b border-border/60 px-3 py-1.5">
-              <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                manifest
-              </span>
-              <button
-                type="button"
-                onClick={copyManifest}
-                className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground hover:text-foreground"
-              >
-                <Copy className="h-3 w-3" />
-                {copied ? "copied" : "copy"}
-              </button>
-            </div>
-            <pre className="max-h-72 overflow-auto p-3 font-mono text-[10px] leading-relaxed text-popover-foreground">
-              {manifestJson || "loading…"}
-            </pre>
-          </div>
-        ) : null}
-      </div>
-
-      <div className="mt-auto pt-6 text-center font-mono text-[10px] text-muted-foreground/60">
-        AI Shelf · UCP 2026-04-08
+        <div className="mb-2 flex items-center justify-between">
+          <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+            UCP Endpoints
+          </span>
+          <span className="rounded-full bg-primary/10 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-primary">
+            live
+          </span>
+        </div>
+        <UcpExplorer store={store} />
       </div>
     </aside>
   )
