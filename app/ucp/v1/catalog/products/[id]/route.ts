@@ -1,4 +1,4 @@
-import { getStore } from "@/lib/store-cache"
+import { resolveStore } from "@/lib/store-cache"
 
 export async function GET(
   req: Request,
@@ -11,7 +11,7 @@ export async function GET(
   if (!store) {
     return Response.json({ error: "Missing ?store" }, { status: 400 })
   }
-  const snapshot = getStore(store)
+  const snapshot = await resolveStore(store)
   if (!snapshot) {
     return Response.json({ error: "Store not found" }, { status: 404 })
   }

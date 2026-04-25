@@ -1,16 +1,21 @@
 /**
- * Process-wide in-memory cache for ingested store snapshots and
- * checkout sessions. This is the simplest possible backend for the
- * hackathon demo — no external DB required.
+ * Process-wide cache for ingested store snapshots and checkout sessions.
+ *
+ * IMPORTANT: On Vercel's serverless runtime, every request can land on a
+ * different lambda instance, so a pure in-memory Map is not visible across
+ * cold starts. We therefore expose `resolveStore(domain)` which transparently
+ * re-ingests the catalog from the live Shopify storefront on a cache miss
+ * and warms the local Map for subsequent calls on the same instance.
  *
  * Keyed by store domain (host).
  */
 
-import type { StoreSnapshot, UCPItem } from "./shopify"
+import { fetchShopifyCatalog, type StoreSnapshot, type UCPItem } from "./shopify"
 
 type Globals = typeof globalThis & {
   __aiShelfStores?: Map<string, StoreSnapshot>
   __aiShelfSessions?: Map<string, CheckoutSession>
+  __aiShelfInflight?: Map<string, Promise<StoreSnapshot | undefined>>
 }
 
 const g = globalThis as Globals
@@ -24,8 +29,51 @@ export function saveStore(snapshot: StoreSnapshot): void {
   getStores().set(snapshot.domain, snapshot)
 }
 
+/** Synchronous in-memory lookup. Returns undefined on cold lambdas. Prefer
+ * `resolveStore` for any code path that runs on the server, since the cache
+ * is not durable across serverless invocations. */
 export function getStore(domain: string): StoreSnapshot | undefined {
   return getStores().get(domain)
+}
+
+/** Async lookup with serverless-safe fallback: if the in-memory cache is
+ * empty (cold lambda or freshly-deployed instance), re-ingest the catalog
+ * from the live Shopify storefront and warm the cache. Returns `undefined`
+ * only if the domain genuinely doesn't expose a Shopify catalog.
+ *
+ * This is what every API route and the chat handler should call. */
+export async function resolveStore(
+  domain: string,
+): Promise<StoreSnapshot | undefined> {
+  const cached = getStores().get(domain)
+  if (cached) return cached
+
+  // Coalesce concurrent rehydration requests for the same domain so we don't
+  // hit /products.json N times when N tools fire in parallel.
+  if (!g.__aiShelfInflight) g.__aiShelfInflight = new Map()
+  const inflight = g.__aiShelfInflight
+  const existing = inflight.get(domain)
+  if (existing) return existing
+
+  const promise = (async () => {
+    try {
+      const candidate = domain.startsWith("http")
+        ? domain
+        : `https://${domain}`
+      const { snapshot } = await fetchShopifyCatalog(candidate, {
+        maxPages: 2,
+      })
+      saveStore(snapshot)
+      return snapshot
+    } catch {
+      return undefined
+    } finally {
+      inflight.delete(domain)
+    }
+  })()
+
+  inflight.set(domain, promise)
+  return promise
 }
 
 export function getStoreByUrl(storeUrl: string): StoreSnapshot | undefined {

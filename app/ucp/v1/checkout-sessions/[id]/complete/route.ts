@@ -1,4 +1,4 @@
-import { getSession, getStore, saveSession } from "@/lib/store-cache"
+import { getSession, resolveStore, saveSession } from "@/lib/store-cache"
 
 export async function POST(
   _req: Request,
@@ -15,7 +15,7 @@ export async function POST(
     )
   }
 
-  const snapshot = getStore(s.storeDomain)
+  const snapshot = await resolveStore(s.storeDomain)
   const orderId = `ORD-${Math.random().toString(36).slice(2, 8).toUpperCase()}${Date.now()
     .toString(36)
     .toUpperCase()
