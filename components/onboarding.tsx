@@ -1,7 +1,7 @@
 "use client"
 
-import { useState } from "react"
-import { ArrowRight, CheckCircle2, Loader2, Sparkles } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import { ArrowRight, CheckCircle2, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export type IngestResult = {
@@ -26,46 +26,85 @@ const DEMO_STORES = [
   { label: "Gymshark", url: "https://www.gymshark.com" },
 ]
 
+type AuditStep = {
+  id: string
+  label: string
+}
+
+const AUDIT_STEPS: AuditStep[] = [
+  { id: "fetch", label: "Fetching /products.json" },
+  { id: "transform", label: "Transforming variants → UCP items" },
+  { id: "manifest", label: "Generating /.well-known/ucp manifest" },
+  { id: "capabilities", label: "Auditing capabilities (catalog, checkout, fulfillment)" },
+  { id: "ready", label: "Storefront ready" },
+]
+
 export function Onboarding({ onConnected }: Props) {
   const [url, setUrl] = useState("")
   const [status, setStatus] = useState<
-    "idle" | "loading" | "success" | "error"
+    "idle" | "running" | "success" | "error"
   >("idle")
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<IngestResult | null>(null)
+  const [stepIndex, setStepIndex] = useState(0)
+  const advanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  async function connect(target: string) {
+  useEffect(() => {
+    return () => {
+      if (advanceTimer.current) clearTimeout(advanceTimer.current)
+    }
+  }, [])
+
+  async function start(target: string) {
     if (!target.trim()) return
-    setStatus("loading")
+    setStatus("running")
     setError(null)
+    setStepIndex(0)
+
+    // Tick through visible audit steps (visual feedback while fetch is in flight)
+    const tickInterval = setInterval(() => {
+      setStepIndex((i) => Math.min(i + 1, AUDIT_STEPS.length - 2))
+    }, 550)
+
     try {
       const res = await fetch("/api/ingest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ storeUrl: target }),
       })
+      clearInterval(tickInterval)
+
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         throw new Error(data.error || `Failed (${res.status})`)
       }
+
       const data = (await res.json()) as IngestResult
       setResult(data)
+      setStepIndex(AUDIT_STEPS.length - 1)
       setStatus("success")
+
+      // Auto-continue into the chat flow once the audit is shown.
+      advanceTimer.current = setTimeout(() => {
+        onConnected(data)
+      }, 1600)
     } catch (err) {
+      clearInterval(tickInterval)
       const message = err instanceof Error ? err.message : String(err)
       setError(message)
       setStatus("error")
     }
   }
 
+  const ctaDisabled =
+    status === "running" || status === "success" || !url.trim()
+
   return (
     <div className="relative min-h-screen w-full overflow-hidden">
-      {/* subtle dot pattern */}
       <div className="absolute inset-0 dot-grid opacity-40 pointer-events-none" />
       <div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/40 to-background pointer-events-none" />
 
       <div className="relative mx-auto flex min-h-screen max-w-2xl flex-col items-center justify-center px-6 py-16">
-        {/* eyebrow */}
         <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-border/60 bg-secondary/40 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
           <span className="h-1.5 w-1.5 rounded-full bg-primary" />
           UCP 2026-04-08 · Track 2
@@ -78,15 +117,15 @@ export function Onboarding({ onConnected }: Props) {
         </h1>
 
         <p className="mt-5 max-w-md text-pretty text-center text-sm leading-relaxed text-muted-foreground">
-          Paste your Shopify URL. We pull your catalog, generate a UCP manifest, and
-          spin up an AI storefront where buyers shop in chat — no redirect.
+          Paste your Shopify URL. We pull your catalog, run a quick audit, and
+          drop you straight into an AI storefront where buyers shop in chat.
         </p>
 
-        {/* URL input */}
+        {/* URL input + Start */}
         <form
           onSubmit={(e) => {
             e.preventDefault()
-            void connect(url)
+            void start(url)
           }}
           className="mt-10 w-full max-w-xl"
         >
@@ -109,26 +148,31 @@ export function Onboarding({ onConnected }: Props) {
                 setUrl(e.target.value)
                 if (status === "error") setStatus("idle")
               }}
-              disabled={status === "loading"}
-              className="flex-1 bg-transparent px-3 py-3 font-mono text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none disabled:opacity-50"
+              disabled={status === "running" || status === "success"}
+              className="flex-1 bg-transparent px-3 py-3 font-mono text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none disabled:opacity-60"
             />
             <button
               type="submit"
-              disabled={status === "loading" || !url.trim()}
+              disabled={ctaDisabled}
               className={cn(
-                "inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors",
+                "inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold transition-colors",
                 "bg-primary text-primary-foreground hover:bg-primary/90",
                 "disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground",
               )}
             >
-              {status === "loading" ? (
+              {status === "running" ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Ingesting…
+                  Auditing…
+                </>
+              ) : status === "success" ? (
+                <>
+                  <CheckCircle2 className="h-4 w-4" />
+                  Done
                 </>
               ) : (
                 <>
-                  Connect store
+                  Start
                   <ArrowRight className="h-4 w-4" />
                 </>
               )}
@@ -143,7 +187,7 @@ export function Onboarding({ onConnected }: Props) {
         </form>
 
         {/* Demo stores */}
-        {status !== "success" && (
+        {status === "idle" || status === "error" ? (
           <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
             <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
               Try a demo store:
@@ -152,109 +196,109 @@ export function Onboarding({ onConnected }: Props) {
               <button
                 key={s.url}
                 type="button"
-                disabled={status === "loading"}
                 onClick={() => {
                   setUrl(s.url)
-                  void connect(s.url)
+                  void start(s.url)
                 }}
-                className="rounded-full border border-border bg-secondary/40 px-3 py-1 text-xs text-foreground/80 transition-colors hover:border-primary/50 hover:text-foreground disabled:opacity-50"
+                className="rounded-full border border-border bg-secondary/40 px-3 py-1 text-xs text-foreground/80 transition-colors hover:border-primary/50 hover:text-foreground"
               >
                 {s.label}
               </button>
             ))}
           </div>
-        )}
+        ) : null}
 
-        {/* Loading skeleton */}
-        {status === "loading" && (
-          <div className="mt-10 w-full max-w-xl">
-            <ul className="space-y-2 font-mono text-xs text-muted-foreground">
-              <li className="flex items-center gap-2">
-                <Loader2 className="h-3 w-3 animate-spin text-primary" />
-                Fetching /products.json…
-              </li>
-              <li className="flex items-center gap-2 opacity-60">
-                <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />
-                Transforming variants → UCP items
-              </li>
-              <li className="flex items-center gap-2 opacity-40">
-                <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />
-                Generating /.well-known/ucp manifest
-              </li>
+        {/* Live audit log */}
+        {(status === "running" || status === "success") && (
+          <div className="mt-10 w-full max-w-xl rounded-xl border border-border/70 bg-card/60 p-5 backdrop-blur">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                Live audit
+              </span>
+              {status === "success" && result ? (
+                <span className="font-mono text-[10px] uppercase tracking-widest text-primary">
+                  {result.productCount.toLocaleString()} products · ready
+                </span>
+              ) : (
+                <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                  in progress
+                </span>
+              )}
+            </div>
+
+            <ul className="space-y-2 font-mono text-xs">
+              {AUDIT_STEPS.map((step, i) => {
+                const done =
+                  status === "success" ? true : i < stepIndex
+                const active = status === "running" && i === stepIndex
+                const pending = !done && !active
+                return (
+                  <li
+                    key={step.id}
+                    className={cn(
+                      "flex items-center gap-3 transition-opacity",
+                      pending && "opacity-40",
+                    )}
+                  >
+                    {done ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-primary" />
+                    ) : active ? (
+                      <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
+                    ) : (
+                      <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/40" />
+                    )}
+                    <span
+                      className={cn(
+                        done
+                          ? "text-foreground/90"
+                          : active
+                            ? "text-foreground"
+                            : "text-muted-foreground",
+                      )}
+                    >
+                      {step.label}
+                    </span>
+                  </li>
+                )
+              })}
             </ul>
-          </div>
-        )}
 
-        {/* Success state */}
-        {status === "success" && result && (
-          <div className="mt-10 w-full max-w-xl">
-            <div className="rounded-xl border border-primary/30 bg-card p-5 text-card-foreground shadow-lg shadow-primary/5">
-              <div className="flex items-start gap-3">
-                <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground">
-                  <CheckCircle2 className="h-4 w-4" />
+            {/* Audit summary appears once successful */}
+            {status === "success" && result ? (
+              <div className="mt-5 border-t border-border/50 pt-4">
+                <div className="flex flex-wrap items-baseline gap-x-2">
+                  <span className="text-base font-medium">
+                    {result.storeName}
+                  </span>
+                  <span className="font-mono text-[11px] text-muted-foreground/80">
+                    {result.domain}
+                  </span>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-wrap items-baseline gap-x-2">
-                    <span className="text-base font-medium">
-                      {result.storeName}
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {result.capabilities.map((c) => (
+                    <span
+                      key={c}
+                      className="rounded-md bg-accent px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-accent-foreground"
+                    >
+                      {c}
                     </span>
-                    <span className="font-mono text-[11px] text-muted-foreground/80">
-                      {result.domain}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    UCP manifest ready ·{" "}
-                    <span className="font-medium text-foreground">
-                      {result.productCount.toLocaleString()} products
-                    </span>{" "}
-                    indexed
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {result.capabilities.map((c) => (
-                      <span
-                        key={c}
-                        className="rounded-md bg-accent px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-accent-foreground"
-                      >
-                        {c}
-                      </span>
-                    ))}
-                  </div>
+                  ))}
                 </div>
-              </div>
-
-              {result.sampleTitles.length > 0 && (
-                <div className="mt-4 border-t border-border/50 pt-4">
-                  <div className="mb-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                    Sample products
-                  </div>
-                  <ul className="space-y-1 text-xs text-card-foreground/80">
-                    {result.sampleTitles.map((t, i) => (
+                {result.sampleTitles.length > 0 && (
+                  <ul className="mt-3 space-y-1 text-xs text-card-foreground/70">
+                    {result.sampleTitles.slice(0, 3).map((t, i) => (
                       <li key={i} className="truncate">
                         · {t}
                       </li>
                     ))}
                   </ul>
+                )}
+                <div className="mt-4 flex items-center gap-2 font-mono text-[11px] text-primary">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Entering storefront…
                 </div>
-              )}
-
-              <button
-                type="button"
-                onClick={() => onConnected(result)}
-                className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-              >
-                <Sparkles className="h-4 w-4" />
-                Try the storefront
-              </button>
-            </div>
-
-            <a
-              href={result.manifestUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-3 block text-center font-mono text-[11px] text-muted-foreground hover:text-primary"
-            >
-              View {result.manifestUrl}
-            </a>
+              </div>
+            ) : null}
           </div>
         )}
       </div>
