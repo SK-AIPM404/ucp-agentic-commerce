@@ -15,8 +15,8 @@
   --popover-foreground: oklch(0.985 0 0);
 
   /* Primary = vivid teal action color */
-  --primary: oklch(0.74 0.17 162);
-  --primary-foreground: oklch(0.16 0.02 162);
+  --primary: oklch(0.7 0.16 162);
+  --primary-foreground: oklch(0.99 0 0);
 
   --secondary: oklch(0.205 0 0);
   --secondary-foreground: oklch(0.92 0 0);
