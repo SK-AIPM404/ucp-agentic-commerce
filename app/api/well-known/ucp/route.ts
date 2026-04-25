@@ -76,13 +76,18 @@ export async function GET(req: Request) {
         url_template: `${snapshot.storeUrl}/checkouts/{{session_id}}`,
       },
     ],
+    // Categories MUST be derived from the real ingested product_type values —
+    // never hardcoded or hallucinated. snapshot.items[].category was set to
+    // the underlying Shopify `product_type` field at ingest time.
     catalog_summary: {
       product_count: snapshot.items.length,
-      categories: Array.from(
-        new Set(
-          snapshot.items.map((i) => i.category).filter(Boolean),
+      categories: [
+        ...new Set(
+          snapshot.items
+            .map((i) => i.category)
+            .filter((c): c is string => Boolean(c && c.trim())),
         ),
-      ).slice(0, 20),
+      ].slice(0, 20),
     },
     generated_at: new Date(snapshot.ingestedAt).toISOString(),
   }

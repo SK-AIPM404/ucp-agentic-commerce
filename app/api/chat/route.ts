@@ -250,6 +250,9 @@ export async function POST(req: Request) {
   const body = (await req.json()) as Body
   const storeDomain = body.storeDomain
 
+  // Confirmation that the route is being hit and which store is in scope.
+  console.log("CHAT HIT", storeDomain)
+
   if (!storeDomain) {
     return new Response("storeDomain is required", { status: 400 })
   }
@@ -263,12 +266,33 @@ export async function POST(req: Request) {
 
   const tools = buildTools(storeDomain)
 
+  // Inject a compact slice of the live catalog into the system prompt so the
+  // model can ground intent in real product titles/categories before calling
+  // search_catalog. Keep it terse — the tool returns full detail on demand.
+  const catalogSample = snapshot.items.slice(0, 50).map((i) => ({
+    id: i.id,
+    title: i.title,
+    category: i.category,
+    brand: i.brand,
+    price_display: formatPrice(i.price, snapshot.currency),
+  }))
+  const realCategories = Array.from(
+    new Set(snapshot.items.map((i) => i.category).filter(Boolean)),
+  ).slice(0, 30)
+
   const system = `You are AI Shelf, a sharp shopping assistant embedded in ${snapshot.storeName}'s storefront.
 Your job is to discover relevant products from THIS catalog only, help the buyer pick variants, and complete checkout — all in chat.
 
+Catalog facts (real, from this store only):
+- Total products: ${snapshot.items.length}
+- Currency: ${snapshot.currency}
+- Real categories present: ${realCategories.length ? realCategories.join(", ") : "(none labeled)"}
+- Sample of first ${catalogSample.length} products (id · title · category · price):
+${catalogSample.map((p) => `  • ${p.id} · ${p.title} · ${p.category || "—"} · ${p.price_display}`).join("\n")}
+
 Rules:
-- Always call the search_catalog tool before recommending a product. Never invent products.
-- The catalog has ${snapshot.items.length} products in ${snapshot.currency}. Currency formatting is handled by tools — surface the *_display strings as-is.
+- Always call the search_catalog tool before recommending a product. Never invent products or categories.
+- Currency formatting is handled by tools — surface the *_display strings as-is.
 - When recommending, mention 2–4 of the strongest matches in 1–2 short sentences each. Be specific about why it fits.
 - When the buyer says "I'll take the X" or similar, call create_checkout_session with the right product_id and variant_id.
 - If they ask for discounts, mention WELCOME10, FLAT500 or FREESHIP and apply via apply_discount.

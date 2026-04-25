@@ -12,6 +12,7 @@ export type IngestResult = {
   currency: string
   productCount: number
   sampleTitles: string[]
+  categories: string[]
   capabilities: string[]
   manifestUrl: string
 }
@@ -315,6 +316,23 @@ export function Onboarding({ onConnected }: Props) {
                     </span>
                   ))}
                 </div>
+                {result.categories && result.categories.length > 0 && (
+                  <div className="mt-3">
+                    <div className="mb-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                      Real categories from product_type
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {result.categories.slice(0, 8).map((c) => (
+                        <span
+                          key={c}
+                          className="rounded-full border border-border/60 bg-secondary/40 px-2 py-0.5 font-mono text-[10px] text-foreground/80"
+                        >
+                          {c}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {result.sampleTitles.length > 0 && (
                   <ul className="mt-3 space-y-1 text-xs text-card-foreground/70">
                     {result.sampleTitles.slice(0, 3).map((t, i) => (

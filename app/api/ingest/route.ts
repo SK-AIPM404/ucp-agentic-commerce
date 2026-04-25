@@ -25,6 +25,16 @@ export async function POST(req: Request) {
     const { snapshot } = await fetchShopifyCatalog(storeUrl, { maxPages: 2 })
     saveStore(snapshot)
 
+    // Derive the real category list from product_type values so the audit
+    // shows exactly what the manifest will publish — no hallucination.
+    const categories = [
+      ...new Set(
+        snapshot.items
+          .map((i) => i.category)
+          .filter((c): c is string => Boolean(c && c.trim())),
+      ),
+    ].slice(0, 12)
+
     return Response.json({
       ok: true,
       domain: snapshot.domain,
@@ -33,6 +43,7 @@ export async function POST(req: Request) {
       currency: snapshot.currency,
       productCount: snapshot.items.length,
       sampleTitles: snapshot.items.slice(0, 5).map((i) => i.title),
+      categories,
       capabilities: ["catalog", "checkout", "fulfillment"],
       manifestUrl: `/api/well-known/ucp?store=${encodeURIComponent(snapshot.domain)}`,
     })
