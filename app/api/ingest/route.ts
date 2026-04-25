@@ -5,11 +5,23 @@ export const maxDuration = 30
 
 export async function POST(req: Request) {
   try {
-    const { storeUrl } = (await req.json()) as { storeUrl?: string }
+    const body = (await req.json().catch(() => ({}))) as {
+      storeUrl?: string
+    }
+    const storeUrl = (body.storeUrl ?? "").trim()
+
     if (!storeUrl) {
-      return Response.json({ error: "storeUrl is required" }, { status: 400 })
+      return Response.json(
+        { error: "Please enter a store URL." },
+        { status: 400 },
+      )
     }
 
+    // fetchShopifyCatalog handles:
+    //   • normalizing the user's input (markdown, trailing slash, missing protocol)
+    //   • trying the given domain first
+    //   • falling back to <brand>.myshopify.com if /products.json 404s
+    //   • capping at 500 products across two pages of 250
     const { snapshot } = await fetchShopifyCatalog(storeUrl, { maxPages: 2 })
     saveStore(snapshot)
 

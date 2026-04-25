@@ -78,13 +78,14 @@ export type StoreSnapshot = {
   items: UCPItem[]
 }
 
-/** Normalize raw user input into a clean Shopify origin.
+/** Normalize raw user input into a clean origin.
  * Accepts: bare domains, https URLs, markdown-formatted links like
- * "[www.allbirds.com](http://www.allbirds.com)", and trailing slashes/paths.
+ * "[www.allbirds.com](http://www.allbirds.com)", trailing slashes, and paths.
+ * Strips trailing slashes and paths so callers can always append /products.json.
  */
 export function normalizeStoreUrl(input: string): string {
-  let url = input.trim()
-  if (!url) throw new Error("Empty URL")
+  let url = (input ?? "").trim()
+  if (!url) throw new Error("Please enter a store URL.")
 
   // Strip markdown link wrapper "[label](href)" → take the href.
   const md = url.match(/^\[[^\]]+\]\((https?:\/\/[^)]+)\)$/i)
@@ -98,6 +99,33 @@ export function normalizeStoreUrl(input: string): string {
   }
   const u = new URL(url)
   return `${u.protocol}//${u.hostname}${u.port ? ":" + u.port : ""}`
+}
+
+/** Build the ordered list of candidate origins to try for a given user input.
+ * 1. The user's actual domain as given (e.g. https://allbirds.com).
+ * 2. The myshopify.com variant derived from the brand label
+ *    (e.g. https://allbirds.myshopify.com).
+ * Duplicates and the literal "myshopify.com" host are filtered out.
+ */
+export function buildOriginCandidates(input: string): string[] {
+  const primary = normalizeStoreUrl(input)
+  const candidates = new Set<string>([primary])
+
+  try {
+    const host = new URL(primary).hostname.toLowerCase()
+    if (!host.endsWith(".myshopify.com")) {
+      // Derive brand label: drop "www.", drop public TLD parts, take first label.
+      const noWww = host.replace(/^www\./, "")
+      const brand = noWww.split(".")[0]
+      if (brand && brand !== "myshopify") {
+        candidates.add(`https://${brand}.myshopify.com`)
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return [...candidates]
 }
 
 /** Strip simple HTML tags to derive plain text descriptions. */
@@ -214,20 +242,22 @@ export function transformProductsToUCP(
 const MAX_PRODUCTS = 500
 const PAGE_SIZE = 250
 
-export async function fetchShopifyCatalog(
-  storeUrl: string,
-  opts?: { maxPages?: number; signal?: AbortSignal },
-): Promise<{ snapshot: StoreSnapshot; raw: ShopifyProduct[] }> {
-  const maxPages = Math.min(opts?.maxPages ?? 2, MAX_PRODUCTS / PAGE_SIZE)
-  const origin = normalizeStoreUrl(storeUrl)
-
+/** Fetch products.json from a single candidate origin. Returns null on
+ * 4xx/non-JSON so callers can try the next candidate; throws on transport
+ * errors only when no candidate has succeeded.
+ */
+async function fetchProductsFromOrigin(
+  origin: string,
+  maxPages: number,
+  signal?: AbortSignal,
+): Promise<ShopifyProduct[] | null> {
   const all: ShopifyProduct[] = []
   for (let page = 1; page <= maxPages; page++) {
     const url = `${origin}/products.json?limit=${PAGE_SIZE}&page=${page}`
     let res: Response
     try {
       res = await fetch(url, {
-        signal: opts?.signal,
+        signal,
         headers: {
           Accept: "application/json",
           // Some Shopify edges 403 the default Node UA.
@@ -237,59 +267,77 @@ export async function fetchShopifyCatalog(
         redirect: "follow",
         cache: "no-store",
       })
-    } catch (err) {
-      throw new Error(
-        `Could not reach ${origin}. ${err instanceof Error ? err.message : ""}`.trim(),
-      )
+    } catch {
+      // Network/DNS error on this candidate — let the caller try the next.
+      return null
     }
 
-    if (!res.ok) {
-      if (page === 1) {
-        throw new Error(
-          `${origin}/products.json returned ${res.status}. This site may not be a public Shopify store.`,
-        )
-      }
-      break
-    }
+    if (!res.ok) return null
 
     const text = await res.text()
     let data: { products?: ShopifyProduct[] }
     try {
       data = JSON.parse(text) as { products?: ShopifyProduct[] }
     } catch {
-      throw new Error(
-        `${origin}/products.json did not return JSON. This site is likely not powered by Shopify.`,
-      )
+      // Not JSON — site isn't Shopify, try next candidate.
+      return null
     }
     const products = data.products || []
     all.push(...products)
-    // Stop if this page wasn't full (no more pages to fetch) or we've hit the cap.
+
+    // Page-2 rule: only fetch a second page if page 1 returned exactly PAGE_SIZE.
     if (products.length < PAGE_SIZE) break
     if (all.length >= MAX_PRODUCTS) break
   }
-  // Ensure we never exceed the hard cap.
   if (all.length > MAX_PRODUCTS) all.length = MAX_PRODUCTS
+  return all
+}
 
-  if (all.length === 0) {
+export async function fetchShopifyCatalog(
+  storeUrl: string,
+  opts?: { maxPages?: number; signal?: AbortSignal },
+): Promise<{ snapshot: StoreSnapshot; raw: ShopifyProduct[] }> {
+  const maxPages = Math.min(opts?.maxPages ?? 2, MAX_PRODUCTS / PAGE_SIZE)
+
+  // Try the user's domain first, then the derived myshopify.com variant.
+  const candidates = buildOriginCandidates(storeUrl)
+
+  let resolvedOrigin: string | null = null
+  let raw: ShopifyProduct[] = []
+
+  for (const origin of candidates) {
+    const products = await fetchProductsFromOrigin(
+      origin,
+      maxPages,
+      opts?.signal,
+    )
+    if (products && products.length > 0) {
+      resolvedOrigin = origin
+      raw = products
+      break
+    }
+  }
+
+  if (!resolvedOrigin) {
     throw new Error(
-      "No products returned. Confirm this is a public Shopify storefront.",
+      `Could not find a public Shopify catalog at ${candidates.join(" or ")}. Confirm this site is powered by Shopify.`,
     )
   }
 
-  const items = transformProductsToUCP(all)
-  const currency = inferCurrency(all, origin)
+  const items = transformProductsToUCP(raw)
+  const currency = inferCurrency(raw, resolvedOrigin)
   // Plain hostname only — no port, no protocol, no markdown wrapping.
-  const domain = new URL(origin).hostname
+  const domain = new URL(resolvedOrigin).hostname
 
   const snapshot: StoreSnapshot = {
     domain,
-    storeUrl: origin,
-    storeName: inferStoreName(origin),
+    storeUrl: resolvedOrigin,
+    storeName: inferStoreName(resolvedOrigin),
     currency,
     ingestedAt: Date.now(),
     items,
   }
-  return { snapshot, raw: all }
+  return { snapshot, raw }
 }
 
 /** Format a minor-unit integer to a display string. */

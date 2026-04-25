@@ -62,18 +62,12 @@ export function Onboarding({ onConnected }: Props) {
   }, [])
 
   async function start(target: string) {
-    const trimmed = target.trim()
-    console.log("[v0] start() called with:", trimmed)
-    if (!trimmed) {
-      console.log("[v0] start() aborted: empty url")
-      return
-    }
-    if (status === "running") {
-      console.log("[v0] start() aborted: already running")
-      return
-    }
+    // Pass through whatever the user typed — let /api/ingest handle parsing,
+    // normalization, and Shopify-vs-not-Shopify fallback logic.
+    const raw = target ?? ""
+    if (status === "running" || status === "success") return
 
-    setUrl(trimmed)
+    setUrl(raw)
     setStatus("running")
     setError(null)
     setStepIndex(0)
@@ -85,11 +79,10 @@ export function Onboarding({ onConnected }: Props) {
     }, 550)
 
     try {
-      console.log("[v0] POST /api/ingest", { storeUrl: trimmed })
       const res = await fetch("/api/ingest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ storeUrl: trimmed }),
+        body: JSON.stringify({ storeUrl: raw }),
       })
 
       if (tickRef.current) clearInterval(tickRef.current)
@@ -122,8 +115,10 @@ export function Onboarding({ onConnected }: Props) {
     }
   }
 
-  const ctaDisabled =
-    status === "running" || status === "success" || !url.trim()
+  // Per spec: button is active on page load. Only disable while a request is
+  // in flight or after success (so users don't double-submit). Empty/invalid
+  // URL handling is delegated to /api/ingest.
+  const ctaDisabled = status === "running" || status === "success"
 
   return (
     <div className="relative min-h-screen w-full overflow-hidden">
@@ -171,7 +166,6 @@ export function Onboarding({ onConnected }: Props) {
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault()
-                  console.log("[v0] Enter pressed in URL input")
                   void start(url)
                 }
               }}
@@ -181,7 +175,6 @@ export function Onboarding({ onConnected }: Props) {
             <button
               type="button"
               onClick={() => {
-                console.log("[v0] Start clicked, ctaDisabled:", ctaDisabled, "url:", url)
                 if (!ctaDisabled) void start(url)
               }}
               disabled={ctaDisabled}
@@ -241,10 +234,7 @@ export function Onboarding({ onConnected }: Props) {
               <button
                 key={s.url}
                 type="button"
-                onClick={() => {
-                  console.log("[v0] Demo chip clicked:", s.label, s.url)
-                  void start(s.url)
-                }}
+                onClick={() => void start(s.url)}
                 className="rounded-full border border-border bg-secondary/40 px-3 py-1 text-xs text-foreground/80 transition-colors hover:border-primary/50 hover:text-foreground"
               >
                 {s.label}
