@@ -116,9 +116,10 @@ export function Onboarding({ onConnected }: Props) {
               type="submit"
               disabled={status === "loading" || !url.trim()}
               className={cn(
-                "inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors",
-                "bg-primary text-primary-foreground hover:bg-primary/90",
-                "disabled:cursor-not-allowed disabled:opacity-50",
+                "inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-all",
+                "bg-primary text-primary-foreground shadow-[0_0_0_1px_oklch(0.74_0.17_162/0.4),0_8px_24px_-8px_oklch(0.74_0.17_162/0.6)]",
+                "hover:bg-primary/90 hover:shadow-[0_0_0_1px_oklch(0.74_0.17_162/0.6),0_10px_28px_-6px_oklch(0.74_0.17_162/0.7)]",
+                "disabled:cursor-not-allowed disabled:bg-secondary disabled:text-muted-foreground disabled:shadow-none",
               )}
             >
               {status === "loading" ? (
