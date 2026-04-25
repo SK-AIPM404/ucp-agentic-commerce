@@ -4,9 +4,17 @@ import { useEffect, useRef, useState } from "react"
 import { ArrowRight, CheckCircle2, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
+export type IngestBrandProfile = {
+  origin: string
+  positioning: string
+  signature_categories: string[]
+  price_tier: string
+}
+
 export type IngestAnalysis = {
   tagline: string
   prompts: string[]
+  brand?: IngestBrandProfile
 }
 
 export type IngestResult = {
@@ -95,29 +103,23 @@ export function Onboarding({ onConnected }: Props) {
 
       if (tickRef.current) clearInterval(tickRef.current)
 
-      console.log("[v0] /api/ingest status:", res.status)
-
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         const msg = (data && data.error) || `Failed (${res.status})`
-        console.log("[v0] ingest failed:", msg)
         throw new Error(msg)
       }
 
       const data = (await res.json()) as IngestResult
-      console.log("[v0] ingest ok:", data.storeName, data.productCount)
       setResult(data)
       setStepIndex(AUDIT_STEPS.length - 1)
       setStatus("success")
 
       advanceTimer.current = setTimeout(() => {
-        console.log("[v0] auto-advancing into chat")
         onConnected(data)
       }, 1600)
     } catch (err) {
       if (tickRef.current) clearInterval(tickRef.current)
       const message = err instanceof Error ? err.message : String(err)
-      console.log("[v0] start() error:", message)
       setError(message)
       setStatus("error")
     }
@@ -312,8 +314,31 @@ export function Onboarding({ onConnected }: Props) {
                   <span className="font-mono text-[11px] text-muted-foreground/80">
                     {result.domain}
                   </span>
+                  <span className="ml-auto rounded-md bg-secondary/60 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-foreground/80">
+                    {result.currency}
+                  </span>
                 </div>
-                <div className="mt-2 flex flex-wrap gap-1.5">
+
+                {result.analysis?.brand ? (
+                  <div className="mt-3 rounded-lg border border-primary/30 bg-primary/5 p-3">
+                    <div className="mb-1 flex items-center gap-2">
+                      <span className="font-mono text-[9px] uppercase tracking-widest text-primary/80">
+                        AI brand read
+                      </span>
+                      <span className="rounded-full border border-primary/30 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-primary">
+                        {result.analysis.brand.origin}
+                      </span>
+                    </div>
+                    <p className="text-xs leading-relaxed text-foreground/90">
+                      {result.analysis.brand.positioning}
+                    </p>
+                    <div className="mt-2 font-mono text-[10px] text-muted-foreground">
+                      {result.analysis.brand.price_tier}
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="mt-3 flex flex-wrap gap-1.5">
                   {result.capabilities.map((c) => (
                     <span
                       key={c}

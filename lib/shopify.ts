@@ -69,9 +69,21 @@ export type UCPItem = {
   variants: UCPVariant[]
 }
 
+export type BrandProfile = {
+  /** Country/region the brand is rooted in, e.g. "India", "USA", "UK". */
+  origin: string
+  /** Short positioning, e.g. "luxury Ayurvedic skincare". */
+  positioning: string
+  /** Top buyer-facing categories: ["serums", "ubtans", "face oils"]. */
+  signature_categories: string[]
+  /** Approximate price tier label, e.g. "premium ₹1,000–₹3,000". */
+  price_tier: string
+}
+
 export type StoreAnalysis = {
   tagline: string // 6–10 word brand summary, derived from real catalog
   prompts: string[] // 5 brand-specific suggested prompts
+  brand?: BrandProfile
 }
 
 export type StoreSnapshot = {
@@ -173,12 +185,48 @@ function inferStoreName(storeUrl: string): string {
   }
 }
 
-/** Heuristic: detect currency from store. Defaults to INR. */
-function inferCurrency(_products: ShopifyProduct[], storeUrl: string): string {
-  // Most demo stores will be USD; allbirds, kith etc. — but our spec leans INR.
-  // Use simple host hint.
-  const host = storeUrl.toLowerCase()
-  if (host.endsWith(".in") || host.includes(".in/")) return "INR"
+/** Authoritative currency lookup using Shopify's public /cart.js endpoint.
+ * Every Shopify storefront exposes this — no auth needed — and the response
+ * includes the shop's true presentment currency, which products.json does not.
+ * Falls back to TLD-based heuristic if /cart.js is unreachable.
+ */
+async function detectCurrency(
+  origin: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  // Try /cart.js first — fast, public, authoritative.
+  try {
+    const res = await fetch(`${origin}/cart.js`, {
+      signal,
+      headers: {
+        Accept: "application/json",
+        "User-Agent":
+          "Mozilla/5.0 (compatible; AI-Shelf/1.0; +https://ai-shelf.dev)",
+      },
+      redirect: "follow",
+      cache: "no-store",
+    })
+    if (res.ok) {
+      const text = await res.text()
+      try {
+        const data = JSON.parse(text) as {
+          currency?: string
+          presentment_currency?: string
+        }
+        const cur = data.presentment_currency || data.currency
+        if (cur && /^[A-Z]{3}$/.test(cur)) return cur
+      } catch {
+        /* fall through */
+      }
+    }
+  } catch {
+    /* fall through */
+  }
+
+  // Fallback: TLD/host heuristic. Indian-domain heuristic catches `.in`,
+  // ".in.", and "myshopify.com" subdomains we can't introspect.
+  const host = origin.toLowerCase()
+  if (/\.in($|\/|:)/.test(host)) return "INR"
   return "USD"
 }
 
@@ -331,7 +379,7 @@ export async function fetchShopifyCatalog(
   }
 
   const items = transformProductsToUCP(raw)
-  const currency = inferCurrency(raw, resolvedOrigin)
+  const currency = await detectCurrency(resolvedOrigin, opts?.signal)
   // Plain hostname only — no port, no protocol, no markdown wrapping.
   const domain = new URL(resolvedOrigin).hostname
 
@@ -346,13 +394,39 @@ export async function fetchShopifyCatalog(
   return { snapshot, raw }
 }
 
-/** Format a minor-unit integer to a display string. */
+const SYMBOLS: Record<string, string> = {
+  USD: "$",
+  INR: "₹",
+  GBP: "£",
+  EUR: "€",
+  AUD: "A$",
+  CAD: "C$",
+  JPY: "¥",
+  AED: "د.إ ",
+  SGD: "S$",
+}
+
+/** Format a minor-unit integer to a display string. Uses locale-aware
+ * thousands grouping — Indian (lakh/crore) for INR, Western for everything
+ * else. JPY is rendered with no decimals.
+ */
 export function formatPrice(minor: number, currency: string): string {
-  const major = (minor / 100).toFixed(2)
-  const symbol =
-    currency === "INR" ? "₹" : currency === "USD" ? "$" : currency + " "
-  // Add thousands separators
-  const [whole, frac] = major.split(".")
-  const withSep = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ",")
-  return `${symbol}${withSep}.${frac}`
+  const symbol = SYMBOLS[currency] ?? `${currency} `
+  const isJPY = currency === "JPY"
+  const major = isJPY ? Math.round(minor / 100) : minor / 100
+
+  if (currency === "INR") {
+    // Indian numbering: 1,00,000 not 100,000
+    const formatted = new Intl.NumberFormat("en-IN", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(major)
+    return `${symbol}${formatted}`
+  }
+
+  const formatted = new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: isJPY ? 0 : 2,
+    maximumFractionDigits: isJPY ? 0 : 2,
+  }).format(major)
+  return `${symbol}${formatted}`
 }

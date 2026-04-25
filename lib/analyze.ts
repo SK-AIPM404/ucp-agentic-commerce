@@ -16,6 +16,31 @@ import { openrouter } from "@openrouter/ai-sdk-provider"
 import { z } from "zod"
 import { formatPrice, type StoreAnalysis, type StoreSnapshot } from "./shopify"
 
+const BrandProfileSchema = z.object({
+  origin: z
+    .string()
+    .describe(
+      "Country/region the brand is rooted in, inferred from currency, store name, product names (e.g. 'ubtan' → India), and language signals. One word or short phrase like 'India', 'USA', 'UK'.",
+    ),
+  positioning: z
+    .string()
+    .describe(
+      "5–8 word positioning summary, e.g. 'luxury Ayurvedic skincare with cold-pressed oils'.",
+    ),
+  signature_categories: z
+    .array(z.string())
+    .min(2)
+    .max(5)
+    .describe(
+      "Top 2–5 buyer-facing category labels actually represented in the catalog, lowercase, plural where natural.",
+    ),
+  price_tier: z
+    .string()
+    .describe(
+      "One-line price tier label using the catalog's actual currency, e.g. 'premium ₹1,000–₹3,000' or 'mid-range $80–$200'.",
+    ),
+})
+
 const AnalysisSchema = z.object({
   tagline: z
     .string()
@@ -26,6 +51,7 @@ const AnalysisSchema = z.object({
     .describe(
       "Five short, specific prompts a real shopper would type. Each must reference a real category, product type, or price tier from the supplied catalog. No generic phrases like 'show me bestsellers'.",
     ),
+  brand: BrandProfileSchema,
 })
 
 /** Heuristic local fallback used when the LLM call fails (no key, rate-limited,
@@ -89,16 +115,19 @@ export async function analyzeCatalog(
     price: formatPrice(i.price, snapshot.currency),
   }))
 
-  const sys = `You are a retail merchandising analyst. You will be given a real product catalog from a single brand. Your job is to:
-1. Write a tight 6–10 word tagline that captures what this specific brand sells (its positioning), grounded in the real categories you see.
-2. Generate exactly 5 suggested prompts a real shopper would type to start a conversation with an AI shopping assistant for THIS brand.
+  const sys = `You are a retail merchandising analyst. You will be given a real product catalog from a single brand. Your job is to produce four things, all grounded in the supplied catalog:
+
+1. **brand profile** — origin country/region, positioning summary, 2–5 signature category labels, and a one-line price tier using the catalog's actual currency. Infer origin from clear signals: the currency, store name, product naming (e.g. words like "ubtan", "kurta", "ghee" → India; "kilt", "tartan" → Scotland), language, and ingredient lists. Do not default to USA.
+2. **tagline** — a tight 6–10 word brand positioning derived from the real categories.
+3. **5 suggested prompts** a real shopper for THIS brand would type to start a conversation with an AI shopping assistant.
 
 Strict rules for the prompts:
 - They MUST reference real categories, product types, materials, occasions, or price tiers visible in the supplied catalog.
 - Each prompt must feel like something a human would actually type — concise, lowercase, conversational. Maximum 12 words.
 - Never use generic phrases like "show me bestsellers", "what's trending", or "most popular item".
 - Mix intent: at least one discovery prompt, one budget prompt, one occasion/use-case prompt, one comparison prompt, one styling/recommendation prompt.
-- Use the catalog's actual currency formatting in any price reference.`
+- Use the catalog's actual currency formatting in any price reference (₹ for INR, $ for USD, etc.). Indian-rupee prompts should use Indian numbering (e.g. "₹1,000" not "$15").
+- If the brand origin is India, lean into Indian shopping idioms ("for Diwali", "festive gifting", "wedding season") where appropriate.`
 
   const user = `Brand: ${snapshot.storeName}
 Domain: ${snapshot.domain}
@@ -129,6 +158,17 @@ ${sample.map((s) => `• ${s.title} — ${s.category || "—"} — ${s.price}`).
       return {
         tagline: experimental_output.tagline.trim(),
         prompts: experimental_output.prompts.map((p) => p.trim()),
+        brand: experimental_output.brand
+          ? {
+              origin: experimental_output.brand.origin.trim(),
+              positioning: experimental_output.brand.positioning.trim(),
+              signature_categories:
+                experimental_output.brand.signature_categories.map((c) =>
+                  c.trim(),
+                ),
+              price_tier: experimental_output.brand.price_tier.trim(),
+            }
+          : undefined,
       }
     }
     return fallbackAnalysis(snapshot)

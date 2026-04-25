@@ -83,12 +83,36 @@ export function StoreRail({ store, onReset }: Props) {
         </button>
       </div>
 
-      {tagline ? (
-        <div className="mt-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-xs leading-relaxed text-foreground/90">
-          <span className="mr-1.5 font-mono text-[9px] uppercase tracking-widest text-primary/80">
-            AI read
-          </span>
-          {tagline}
+      {/* AI brand read: tagline + origin pill + positioning + price tier.
+          All values are produced by lib/analyze.ts at ingest time, grounded
+          in the real catalog (titles, categories, currency). */}
+      {store.analysis ? (
+        <div className="mt-3 rounded-lg border border-primary/30 bg-primary/5 p-3">
+          <div className="mb-1.5 flex items-center gap-2">
+            <span className="font-mono text-[9px] uppercase tracking-widest text-primary/80">
+              AI brand read
+            </span>
+            {store.analysis.brand?.origin ? (
+              <span className="rounded-full border border-primary/30 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-primary">
+                {store.analysis.brand.origin}
+              </span>
+            ) : null}
+          </div>
+          {tagline ? (
+            <p className="text-xs font-medium leading-relaxed text-foreground/95">
+              {tagline}
+            </p>
+          ) : null}
+          {store.analysis.brand?.positioning ? (
+            <p className="mt-1 text-[11px] leading-relaxed text-foreground/70">
+              {store.analysis.brand.positioning}
+            </p>
+          ) : null}
+          {store.analysis.brand?.price_tier ? (
+            <div className="mt-2 font-mono text-[10px] text-muted-foreground">
+              {store.analysis.brand.price_tier}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
