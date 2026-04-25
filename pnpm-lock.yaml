@@ -8,15 +8,15 @@ importers:
 
   .:
     dependencies:
-      '@ai-sdk/anthropic':
-        specifier: ^3.0.71
-        version: 3.0.71(zod@3.25.76)
       '@ai-sdk/react':
         specifier: ^3.0.170
         version: 3.0.170(react@19.2.4)(zod@3.25.76)
       '@hookform/resolvers':
         specifier: ^3.9.1
         version: 3.10.0(react-hook-form@7.71.1(react@19.2.4))
+      '@openrouter/ai-sdk-provider':
+        specifier: ^2.8.0
+        version: 2.8.0(ai@6.0.168(zod@3.25.76))(zod@3.25.76)
       '@radix-ui/react-accordion':
         specifier: 1.2.12
         version: 1.2.12(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -191,12 +191,6 @@ importers:
         version: 5.7.3
 
 packages:
-
-  '@ai-sdk/anthropic@3.0.71':
-    resolution: {integrity: sha512-bUWOzrzR0gJKJO/PLGMR4uH2dqEgqGhrsCV+sSpk4KtOEnUQlfjZI/F7BFlqSvVpFbjdgYRRLysAeEZpJ6S1lg==}
-    engines: {node: '>=18'}
-    peerDependencies:
-      zod: ^3.25.76 || ^4.1.8
 
   '@ai-sdk/gateway@3.0.104':
     resolution: {integrity: sha512-ZKX5n74io8VIRlhIMSLWVlvT3sXC8Z7cZ9GHuWBWZDVi96+62AIsWuLGvMfcBA1STYuSoDrp6rIziZmvrTq0TA==}
@@ -477,6 +471,13 @@ packages:
     engines: {node: '>= 10'}
     cpu: [x64]
     os: [win32]
+
+  '@openrouter/ai-sdk-provider@2.8.0':
+    resolution: {integrity: sha512-oDDW/0KMqz4suHVloB9sNv0YyKLGNYf1FTevXH6adDkid5dsmbbcYuiEsbIhpZSZtHa6o5AVjK1jEAfePOLxww==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      ai: ^6.0.0
+      zod: ^3.25.0 || ^4.0.0
 
   '@opentelemetry/api@1.9.0':
     resolution: {integrity: sha512-3giAOQvZiH5F9bMlMiv8+GSPMeqg0dbaeo58/0SlA9sxSqZhnUtxzX9/2FzyhS9sWQf5S0GJE0AKBrFqjpeYcg==}
@@ -1830,12 +1831,6 @@ packages:
 
 snapshots:
 
-  '@ai-sdk/anthropic@3.0.71(zod@3.25.76)':
-    dependencies:
-      '@ai-sdk/provider': 3.0.8
-      '@ai-sdk/provider-utils': 4.0.23(zod@3.25.76)
-      zod: 3.25.76
-
   '@ai-sdk/gateway@3.0.104(zod@3.25.76)':
     dependencies:
       '@ai-sdk/provider': 3.0.8
@@ -2037,6 +2032,11 @@ snapshots:
 
   '@next/swc-win32-x64-msvc@16.2.4':
     optional: true
+
+  '@openrouter/ai-sdk-provider@2.8.0(ai@6.0.168(zod@3.25.76))(zod@3.25.76)':
+    dependencies:
+      ai: 6.0.168(zod@3.25.76)
+      zod: 3.25.76
 
   '@opentelemetry/api@1.9.0': {}
 

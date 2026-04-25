@@ -5,7 +5,7 @@ import {
   tool,
   type UIMessage,
 } from "ai"
-import { anthropic } from "@ai-sdk/anthropic"
+import { openrouter } from "@openrouter/ai-sdk-provider"
 import { z } from "zod"
 import {
   getStore,
@@ -302,7 +302,7 @@ Rules:
 - After tool calls return, write one short sentence summarizing what happened. The UI renders the products and checkout cards from the tool output — do NOT paste raw JSON or describe the cards in detail.`
 
   const result = streamText({
-    model: anthropic("claude-sonnet-4-20250514"),
+    model: openrouter("anthropic/claude-sonnet-4"),
     system,
     messages: await convertToModelMessages(body.messages),
     tools,
