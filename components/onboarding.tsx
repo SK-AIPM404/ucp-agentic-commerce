@@ -39,6 +39,10 @@ const AUDIT_STEPS: AuditStep[] = [
   { id: "ready", label: "Storefront ready" },
 ]
 
+// Hardcoded teal so the CTA can never look "disabled" because of a token issue.
+const TEAL = "oklch(0.7 0.16 162)"
+const TEAL_HOVER = "oklch(0.62 0.16 162)"
+
 export function Onboarding({ onConnected }: Props) {
   const [url, setUrl] = useState("")
   const [status, setStatus] = useState<
@@ -48,49 +52,71 @@ export function Onboarding({ onConnected }: Props) {
   const [result, setResult] = useState<IngestResult | null>(null)
   const [stepIndex, setStepIndex] = useState(0)
   const advanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const tickRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     return () => {
       if (advanceTimer.current) clearTimeout(advanceTimer.current)
+      if (tickRef.current) clearInterval(tickRef.current)
     }
   }, [])
 
   async function start(target: string) {
-    if (!target.trim()) return
+    const trimmed = target.trim()
+    console.log("[v0] start() called with:", trimmed)
+    if (!trimmed) {
+      console.log("[v0] start() aborted: empty url")
+      return
+    }
+    if (status === "running") {
+      console.log("[v0] start() aborted: already running")
+      return
+    }
+
+    setUrl(trimmed)
     setStatus("running")
     setError(null)
     setStepIndex(0)
+    setResult(null)
 
-    // Tick through visible audit steps (visual feedback while fetch is in flight)
-    const tickInterval = setInterval(() => {
+    if (tickRef.current) clearInterval(tickRef.current)
+    tickRef.current = setInterval(() => {
       setStepIndex((i) => Math.min(i + 1, AUDIT_STEPS.length - 2))
     }, 550)
 
     try {
+      console.log("[v0] POST /api/ingest", { storeUrl: trimmed })
       const res = await fetch("/api/ingest", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ storeUrl: target }),
+        body: JSON.stringify({ storeUrl: trimmed }),
       })
-      clearInterval(tickInterval)
+
+      if (tickRef.current) clearInterval(tickRef.current)
+
+      console.log("[v0] /api/ingest status:", res.status)
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        throw new Error(data.error || `Failed (${res.status})`)
+        const msg = (data && data.error) || `Failed (${res.status})`
+        console.log("[v0] ingest failed:", msg)
+        throw new Error(msg)
       }
 
       const data = (await res.json()) as IngestResult
+      console.log("[v0] ingest ok:", data.storeName, data.productCount)
       setResult(data)
       setStepIndex(AUDIT_STEPS.length - 1)
       setStatus("success")
 
-      // Auto-continue into the chat flow once the audit is shown.
       advanceTimer.current = setTimeout(() => {
+        console.log("[v0] auto-advancing into chat")
         onConnected(data)
       }, 1600)
     } catch (err) {
-      clearInterval(tickInterval)
+      if (tickRef.current) clearInterval(tickRef.current)
       const message = err instanceof Error ? err.message : String(err)
+      console.log("[v0] start() error:", message)
       setError(message)
       setStatus("error")
     }
@@ -121,14 +147,8 @@ export function Onboarding({ onConnected }: Props) {
           drop you straight into an AI storefront where buyers shop in chat.
         </p>
 
-        {/* URL input + Start */}
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            void start(url)
-          }}
-          className="mt-10 w-full max-w-xl"
-        >
+        {/* URL input + Start (no form, plain onClick — bulletproof) */}
+        <div className="mt-10 w-full max-w-xl">
           <div
             className={cn(
               "flex items-center gap-2 rounded-xl border bg-input/40 p-1.5 backdrop-blur transition-colors",
@@ -148,17 +168,42 @@ export function Onboarding({ onConnected }: Props) {
                 setUrl(e.target.value)
                 if (status === "error") setStatus("idle")
               }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault()
+                  console.log("[v0] Enter pressed in URL input")
+                  void start(url)
+                }
+              }}
               disabled={status === "running" || status === "success"}
               className="flex-1 bg-transparent px-3 py-3 font-mono text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none disabled:opacity-60"
             />
             <button
-              type="submit"
+              type="button"
+              onClick={() => {
+                console.log("[v0] Start clicked, ctaDisabled:", ctaDisabled, "url:", url)
+                if (!ctaDisabled) void start(url)
+              }}
               disabled={ctaDisabled}
+              style={
+                ctaDisabled
+                  ? undefined
+                  : {
+                      backgroundColor: TEAL,
+                      color: "white",
+                    }
+              }
               className={cn(
                 "inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold transition-colors",
-                "bg-primary text-primary-foreground hover:bg-primary/90",
                 "disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground",
+                !ctaDisabled && "hover:brightness-110",
               )}
+              onMouseEnter={(e) => {
+                if (!ctaDisabled) e.currentTarget.style.backgroundColor = TEAL_HOVER
+              }}
+              onMouseLeave={(e) => {
+                if (!ctaDisabled) e.currentTarget.style.backgroundColor = TEAL
+              }}
             >
               {status === "running" ? (
                 <>
@@ -180,14 +225,14 @@ export function Onboarding({ onConnected }: Props) {
           </div>
 
           {status === "error" && error ? (
-            <div className="mt-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 font-mono text-xs text-destructive-foreground">
+            <div className="mt-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 font-mono text-xs text-destructive">
               {error}
             </div>
           ) : null}
-        </form>
+        </div>
 
         {/* Demo stores */}
-        {status === "idle" || status === "error" ? (
+        {(status === "idle" || status === "error") && (
           <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
             <span className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
               Try a demo store:
@@ -197,7 +242,7 @@ export function Onboarding({ onConnected }: Props) {
                 key={s.url}
                 type="button"
                 onClick={() => {
-                  setUrl(s.url)
+                  console.log("[v0] Demo chip clicked:", s.label, s.url)
                   void start(s.url)
                 }}
                 className="rounded-full border border-border bg-secondary/40 px-3 py-1 text-xs text-foreground/80 transition-colors hover:border-primary/50 hover:text-foreground"
@@ -206,7 +251,7 @@ export function Onboarding({ onConnected }: Props) {
               </button>
             ))}
           </div>
-        ) : null}
+        )}
 
         {/* Live audit log */}
         {(status === "running" || status === "success") && (
@@ -228,8 +273,7 @@ export function Onboarding({ onConnected }: Props) {
 
             <ul className="space-y-2 font-mono text-xs">
               {AUDIT_STEPS.map((step, i) => {
-                const done =
-                  status === "success" ? true : i < stepIndex
+                const done = status === "success" ? true : i < stepIndex
                 const active = status === "running" && i === stepIndex
                 const pending = !done && !active
                 return (
@@ -263,13 +307,10 @@ export function Onboarding({ onConnected }: Props) {
               })}
             </ul>
 
-            {/* Audit summary appears once successful */}
-            {status === "success" && result ? (
+            {status === "success" && result && (
               <div className="mt-5 border-t border-border/50 pt-4">
                 <div className="flex flex-wrap items-baseline gap-x-2">
-                  <span className="text-base font-medium">
-                    {result.storeName}
-                  </span>
+                  <span className="text-base font-medium">{result.storeName}</span>
                   <span className="font-mono text-[11px] text-muted-foreground/80">
                     {result.domain}
                   </span>
@@ -298,7 +339,7 @@ export function Onboarding({ onConnected }: Props) {
                   Entering storefront…
                 </div>
               </div>
-            ) : null}
+            )}
           </div>
         )}
       </div>
