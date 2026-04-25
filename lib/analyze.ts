@@ -54,9 +54,82 @@ const AnalysisSchema = z.object({
   brand: BrandProfileSchema,
 })
 
-/** Heuristic local fallback used when the LLM call fails (no key, rate-limited,
- * etc.) — still brand-specific because it derives from real categories.
- */
+/** Words to exclude from product-noun extraction — they're either generic
+ * filler, brand/marketing modifiers, or color/material adjectives that don't
+ * read as a buyer noun on their own. */
+const NOUN_STOPWORDS = new Set<string>([
+  "the",
+  "a",
+  "an",
+  "and",
+  "or",
+  "with",
+  "for",
+  "of",
+  "in",
+  "to",
+  "by",
+  "at",
+  "on",
+  "new",
+  "limited",
+  "edition",
+  "sale",
+  "exclusive",
+  "premium",
+  "classic",
+  "essential",
+  "fresh",
+  "natural",
+  "organic",
+  "handmade",
+  "luxury",
+  "free",
+  "fast",
+  "long",
+  "short",
+  "small",
+  "medium",
+  "large",
+  "men",
+  "mens",
+  "men's",
+  "women",
+  "womens",
+  "women's",
+  "kids",
+  "kids'",
+  "unisex",
+])
+
+/** Pull concrete singular/plural nouns from product titles. Returns up to
+ * 18 of the most frequent terms, lowercased, deduped, longer than 3 chars,
+ * and not in the stopword list. */
+function extractProductNouns(titles: string[]): string[] {
+  const counts = new Map<string, number>()
+  for (const title of titles) {
+    if (!title) continue
+    const tokens = title
+      .toLowerCase()
+      .replace(/[®™©]/g, "")
+      .split(/[^\p{L}']+/u)
+      .filter(Boolean)
+    for (const t of tokens) {
+      if (t.length <= 3) continue
+      if (NOUN_STOPWORDS.has(t)) continue
+      if (/^\d+$/.test(t)) continue
+      counts.set(t, (counts.get(t) ?? 0) + 1)
+    }
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 18)
+    .map(([word]) => word)
+}
+
+/** Heuristic local fallback used when the LLM call fails. Always grammatical
+ * because it composes a real product noun (from titles) with a category, and
+ * never falls back to demographic-only fragments like "show me womens". */
 function fallbackAnalysis(snapshot: StoreSnapshot): StoreAnalysis {
   const cats = [
     ...new Set(
@@ -65,23 +138,32 @@ function fallbackAnalysis(snapshot: StoreSnapshot): StoreAnalysis {
         .filter((c): c is string => Boolean(c && c.trim())),
     ),
   ]
-  const top = cats.slice(0, 3)
-  const prices = snapshot.items.map((i) => i.price).filter((p) => p > 0).sort(
-    (a, b) => a - b,
-  )
+  const nouns = extractProductNouns(snapshot.items.map((i) => i.title))
+  const prices = snapshot.items
+    .map((i) => i.price)
+    .filter((p) => p > 0)
+    .sort((a, b) => a - b)
   const median = prices[Math.floor(prices.length / 2)] || 0
-  const medianMajor = Math.round(median / 100)
 
-  const prompts: string[] = []
-  if (top[0]) prompts.push(`show me ${top[0].toLowerCase()} under ${formatPrice(median, snapshot.currency)}`)
-  if (top[1]) prompts.push(`what's new in ${top[1].toLowerCase()}?`)
-  if (top[2]) prompts.push(`best-rated ${top[2].toLowerCase()} for everyday use`)
-  prompts.push(`gift ideas around ${formatPrice(median, snapshot.currency)}`)
-  prompts.push(`compare two top picks side by side`)
+  // Pick a "primary noun" the brand sells — the most common title word.
+  // This guarantees every prompt has a concrete subject.
+  const primaryNoun = nouns[0] ?? "items"
+  const secondNoun = nouns[1] ?? primaryNoun
+  const thirdNoun = nouns[2] ?? primaryNoun
+
+  const priceLabel = formatPrice(median, snapshot.currency)
+
+  const prompts: string[] = [
+    `show me your best ${primaryNoun}`,
+    `which ${primaryNoun} are under ${priceLabel}?`,
+    `what ${secondNoun} do you recommend for everyday wear?`,
+    `compare your top two ${primaryNoun}`,
+    `help me pick a ${thirdNoun} as a gift`,
+  ]
 
   return {
-    tagline: top.length
-      ? `${snapshot.storeName} — ${top.slice(0, 2).join(" & ")} essentials`
+    tagline: cats.length
+      ? `${snapshot.storeName} — ${cats.slice(0, 2).join(" & ")} essentials`
       : `${snapshot.storeName} catalog`,
     prompts: prompts.slice(0, 5),
   }
@@ -102,6 +184,12 @@ export async function analyzeCatalog(
     ),
   ].slice(0, 20)
 
+  // Some stores use demographic labels ("Mens", "Womens") as product_type,
+  // which produce ungrammatical prompts on their own. Extract concrete buyer
+  // nouns from product titles so the model can phrase prompts naturally
+  // (e.g. "women's runners" instead of just "womens").
+  const productNouns = extractProductNouns(snapshot.items.map((i) => i.title))
+
   const prices = snapshot.items.map((i) => i.price).filter((p) => p > 0)
   const min = prices.length ? Math.min(...prices) : 0
   const max = prices.length ? Math.max(...prices) : 0
@@ -121,13 +209,28 @@ export async function analyzeCatalog(
 2. **tagline** — a tight 6–10 word brand positioning derived from the real categories.
 3. **5 suggested prompts** a real shopper for THIS brand would type to start a conversation with an AI shopping assistant.
 
-Strict rules for the prompts:
-- They MUST reference real categories, product types, materials, occasions, or price tiers visible in the supplied catalog.
-- Each prompt must feel like something a human would actually type — concise, lowercase, conversational. Maximum 12 words.
-- Never use generic phrases like "show me bestsellers", "what's trending", or "most popular item".
-- Mix intent: at least one discovery prompt, one budget prompt, one occasion/use-case prompt, one comparison prompt, one styling/recommendation prompt.
-- Use the catalog's actual currency formatting in any price reference (₹ for INR, $ for USD, etc.). Indian-rupee prompts should use Indian numbering (e.g. "₹1,000" not "$15").
-- If the brand origin is India, lean into Indian shopping idioms ("for Diwali", "festive gifting", "wedding season") where appropriate.`
+ABSOLUTE RULES for prompts (a violation = automatic rejection):
+
+GRAMMAR
+- Every prompt MUST be a complete, grammatical English phrase that names a concrete product noun (e.g. "shoes", "runners", "serums", "kurtas", "luggage"). NEVER end with a demographic label alone.
+- Never write fragments like "show me womens", "what's new in mens", or "best mens". If the category is "Mens" or "Womens", combine it with a real product noun extracted from titles: "show me women's runners", "what's new in men's sneakers".
+- Use possessives correctly: "men's", "women's", "kids'" — not "mens", "womens".
+
+CONTENT
+- Each prompt MUST reference a real, store-specific product type (from the supplied product nouns or categories), material, occasion, or price tier. Generic phrases like "two top picks", "bestsellers", "what's trending", "most popular item", or "compare two products" are BANNED.
+- Comparisons must name a category: "compare your top wool runners" — not "compare two top picks".
+- Every prompt must feel like something a real customer would type — lowercase, concise, conversational. Max 12 words.
+
+INTENT MIX (one of each):
+1. Discovery — names a specific product type ("show me your wool sneakers")
+2. Budget — uses a real price from the catalog's currency ("which runners under ₹1,500")
+3. Occasion / use-case ("what works for marathon training", "gift ideas for a runner")
+4. Comparison — names a real product category ("compare your mizzles vs runners")
+5. Styling / recommendation — names a category ("help me pick a daily sneaker")
+
+CURRENCY
+- All prices use the catalog's actual currency symbol (${snapshot.currency} → ${snapshot.currency === "INR" ? "₹" : snapshot.currency === "USD" ? "$" : snapshot.currency === "GBP" ? "£" : snapshot.currency === "EUR" ? "€" : snapshot.currency}). Indian-rupee prompts use Indian numbering (e.g. "₹1,000").
+- If the brand origin is India, lean into Indian shopping idioms ("Diwali", "festive gifting", "wedding season") when natural.`
 
   const user = `Brand: ${snapshot.storeName}
 Domain: ${snapshot.domain}
@@ -137,6 +240,9 @@ Price range: ${formatPrice(min, snapshot.currency)} – ${formatPrice(max, snaps
 
 Real categories present (from product_type):
 ${cats.length ? cats.join(", ") : "(none labeled)"}
+
+Concrete product nouns extracted from titles (use THESE, not just the categories above, when categories are demographic labels like "Mens"/"Womens"):
+${productNouns.length ? productNouns.join(", ") : "(none extracted)"}
 
 Sample of ${sample.length} real products:
 ${sample.map((s) => `• ${s.title} — ${s.category || "—"} — ${s.price}`).join("\n")}`
