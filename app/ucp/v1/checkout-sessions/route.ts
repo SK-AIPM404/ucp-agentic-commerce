@@ -1,5 +1,5 @@
 import {
-  getStore,
+  resolveStore,
   saveSession,
   recomputeTotals,
   type CheckoutSession,
@@ -20,7 +20,7 @@ export async function POST(req: Request) {
   if (!store) {
     return Response.json({ error: "Missing ?store" }, { status: 400 })
   }
-  const snapshot = getStore(store)
+  const snapshot = await resolveStore(store)
   if (!snapshot) {
     return Response.json({ error: "Store not found" }, { status: 404 })
   }

@@ -1,4 +1,4 @@
-import { getStore } from "@/lib/store-cache"
+import { resolveStore } from "@/lib/store-cache"
 
 export async function GET(req: Request) {
   const url = new URL(req.url)
@@ -11,10 +11,10 @@ export async function GET(req: Request) {
     )
   }
 
-  const snapshot = getStore(store)
+  const snapshot = await resolveStore(store)
   if (!snapshot) {
     return Response.json(
-      { error: `Store ${store} not ingested. POST /api/ingest first.` },
+      { error: `Store ${store} could not be resolved. POST /api/ingest first.` },
       { status: 404 },
     )
   }

@@ -8,7 +8,7 @@ import {
 import { openrouter } from "@openrouter/ai-sdk-provider"
 import { z } from "zod"
 import {
-  getStore,
+  resolveStore,
   getSession,
   saveSession,
   recomputeTotals,
@@ -16,7 +16,7 @@ import {
   type CheckoutLineItem,
   type CheckoutSession,
 } from "@/lib/store-cache"
-import { formatPrice } from "@/lib/shopify"
+import { formatPrice, type StoreSnapshot } from "@/lib/shopify"
 
 export const maxDuration = 60
 
@@ -27,9 +27,7 @@ type Body = {
 
 /* ----------------------------- Tool definitions ---------------------------- */
 
-function buildTools(storeDomain: string) {
-  const snapshot = getStore(storeDomain)
-
+function buildTools(snapshot: StoreSnapshot) {
   const search_catalog = tool({
     description:
       "Search the merchant's catalog for products matching a buyer's intent. Returns at most 6 matching products with image, price, variants. Always call this BEFORE recommending or showing any product.",
@@ -53,9 +51,6 @@ function buildTools(storeDomain: string) {
         .describe("Optional category filter, e.g. 'kurta', 'shoes'. null if not specified."),
     }),
     execute: async ({ query, max_price, min_price, category }) => {
-      if (!snapshot) {
-        return { error: "Store not ingested. Tell the buyer to reconnect." }
-      }
       const items = searchCatalog(snapshot.items, {
         query,
         maxPrice: max_price ?? undefined,
@@ -105,7 +100,6 @@ function buildTools(storeDomain: string) {
         .min(1),
     }),
     execute: async ({ line_items }) => {
-      if (!snapshot) return { error: "Store not ingested." }
       const lis: CheckoutLineItem[] = []
       for (const li of line_items) {
         const product = snapshot.items.find((i) => i.id === li.product_id)
@@ -251,21 +245,22 @@ export async function POST(req: Request) {
   const body = (await req.json()) as Body
   const storeDomain = body.storeDomain
 
-  // Confirmation that the route is being hit and which store is in scope.
-  console.log("CHAT HIT", storeDomain)
-
   if (!storeDomain) {
     return new Response("storeDomain is required", { status: 400 })
   }
-  const snapshot = getStore(storeDomain)
+
+  // resolveStore re-ingests the catalog from the live Shopify storefront on
+  // a serverless cold start, so the chat endpoint works regardless of which
+  // lambda instance handled the original /api/ingest call.
+  const snapshot = await resolveStore(storeDomain)
   if (!snapshot) {
     return new Response(
-      `Store ${storeDomain} not ingested. POST /api/ingest first.`,
+      `Store ${storeDomain} could not be resolved. POST /api/ingest first.`,
       { status: 404 },
     )
   }
 
-  const tools = buildTools(storeDomain)
+  const tools = buildTools(snapshot)
 
   // Inject a compact slice of the live catalog into the system prompt so the
   // model can ground intent in real product titles/categories before calling
