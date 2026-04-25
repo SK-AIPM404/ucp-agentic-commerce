@@ -2,8 +2,6 @@
 
 > Make any Shopify store transactable through AI agents in 60 seconds.
 
-Built for the Vercel Hackathon · Track 2 (v0 + MCPs) · UCP 2026-04-08
-
 ---
 
 ## What it does
