@@ -69,6 +69,11 @@ export type UCPItem = {
   variants: UCPVariant[]
 }
 
+export type StoreAnalysis = {
+  tagline: string // 6–10 word brand summary, derived from real catalog
+  prompts: string[] // 5 brand-specific suggested prompts
+}
+
 export type StoreSnapshot = {
   domain: string // myshopify domain or canonical
   storeUrl: string // full https URL
@@ -76,6 +81,7 @@ export type StoreSnapshot = {
   currency: string // "INR" | "USD" — best guess from products
   ingestedAt: number
   items: UCPItem[]
+  analysis?: StoreAnalysis
 }
 
 /** Normalize raw user input into a clean origin.

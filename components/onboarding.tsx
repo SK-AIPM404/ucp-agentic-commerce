@@ -4,6 +4,11 @@ import { useEffect, useRef, useState } from "react"
 import { ArrowRight, CheckCircle2, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
+export type IngestAnalysis = {
+  tagline: string
+  prompts: string[]
+}
+
 export type IngestResult = {
   ok: true
   domain: string
@@ -13,6 +18,7 @@ export type IngestResult = {
   productCount: number
   sampleTitles: string[]
   categories: string[]
+  analysis?: IngestAnalysis
   capabilities: string[]
   manifestUrl: string
 }
@@ -37,6 +43,7 @@ const AUDIT_STEPS: AuditStep[] = [
   { id: "transform", label: "Transforming variants → UCP items" },
   { id: "manifest", label: "Generating /.well-known/ucp manifest" },
   { id: "capabilities", label: "Auditing capabilities (catalog, checkout, fulfillment)" },
+  { id: "analyze", label: "Running brand AI analysis (tagline + suggested prompts)" },
   { id: "ready", label: "Storefront ready" },
 ]
 

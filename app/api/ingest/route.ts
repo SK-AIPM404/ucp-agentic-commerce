@@ -1,5 +1,6 @@
 import { fetchShopifyCatalog } from "@/lib/shopify"
 import { saveStore } from "@/lib/store-cache"
+import { analyzeCatalog } from "@/lib/analyze"
 
 export const maxDuration = 30
 
@@ -23,6 +24,12 @@ export async function POST(req: Request) {
     //   • falling back to <brand>.myshopify.com if /products.json 404s
     //   • capping at 500 products across two pages of 250
     const { snapshot } = await fetchShopifyCatalog(storeUrl, { maxPages: 2 })
+
+    // Brand-specific AI analysis: derives a tagline + 5 grounded prompts
+    // from the real catalog. Falls back to a deterministic heuristic if the
+    // model call fails, so we never block the storefront on this.
+    snapshot.analysis = await analyzeCatalog(snapshot)
+
     saveStore(snapshot)
 
     // Derive the real category list from product_type values so the audit
@@ -44,6 +51,7 @@ export async function POST(req: Request) {
       productCount: snapshot.items.length,
       sampleTitles: snapshot.items.slice(0, 5).map((i) => i.title),
       categories,
+      analysis: snapshot.analysis,
       capabilities: ["catalog", "checkout", "fulfillment"],
       manifestUrl: `/api/well-known/ucp?store=${encodeURIComponent(snapshot.domain)}`,
     })
