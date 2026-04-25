@@ -70,10 +70,10 @@ export function ChatPanel({ storeDomain }: Props) {
         void sendMessage({ text: detail })
       }
     }
-    window.addEventListener("ai-shelf:sample-prompt", onSample as EventListener)
+    window.addEventListener("caravel:sample-prompt", onSample as EventListener)
     return () =>
       window.removeEventListener(
-        "ai-shelf:sample-prompt",
+        "caravel:sample-prompt",
         onSample as EventListener,
       )
   }, [sendMessage])
@@ -88,7 +88,7 @@ export function ChatPanel({ storeDomain }: Props) {
           parts: [
             {
               type: "text",
-              text: `Hi — I'm AI Shelf for ${storeDomain.replace(/^www\./, "")}. Tell me what you're looking for and I'll find it from the catalog.`,
+              text: `Hi — I'm Caravel for ${storeDomain.replace(/^www\./, "")}. Tell me what you're looking for and I'll find it from the catalog.`,
             },
           ],
         } as UIMessage,

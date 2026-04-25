@@ -134,7 +134,7 @@ export function StoreRail({ store, onReset }: Props) {
               onClick={() => {
                 // Dispatch a custom event the chat panel can hook into.
                 window.dispatchEvent(
-                  new CustomEvent("ai-shelf:sample-prompt", { detail: p }),
+                  new CustomEvent("caravel:sample-prompt", { detail: p }),
                 )
               }}
               className="text-left rounded-md border border-border bg-secondary/40 px-3 py-2 text-xs text-foreground/80 transition-colors hover:border-primary/40 hover:text-foreground"

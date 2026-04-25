@@ -17,9 +17,9 @@ const dmMono = DM_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "AI Shelf — Agentic commerce for D2C brands",
+  title: "Caravel — Agentic commerce for any storefront",
   description:
-    "Paste your Shopify URL. We generate a UCP manifest and spin up your AI storefront in 60 seconds.",
+    "Paste your Shopify URL. Caravel publishes a UCP manifest and spins up your AI storefront in 60 seconds.",
   generator: "v0.app",
 }
 

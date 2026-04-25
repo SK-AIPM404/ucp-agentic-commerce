@@ -201,7 +201,7 @@ async function detectCurrency(
       headers: {
         Accept: "application/json",
         "User-Agent":
-          "Mozilla/5.0 (compatible; AI-Shelf/1.0; +https://ai-shelf.dev)",
+          "Mozilla/5.0 (compatible; Caravel/1.0; +https://caravel.commerce)",
       },
       redirect: "follow",
       cache: "no-store",
@@ -316,7 +316,7 @@ async function fetchProductsFromOrigin(
           Accept: "application/json",
           // Some Shopify edges 403 the default Node UA.
           "User-Agent":
-            "Mozilla/5.0 (compatible; AI-Shelf/1.0; +https://ai-shelf.dev)",
+            "Mozilla/5.0 (compatible; Caravel/1.0; +https://caravel.commerce)",
         },
         redirect: "follow",
         cache: "no-store",

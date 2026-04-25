@@ -28,7 +28,7 @@ export default function HomePage() {
               <path d="M3 4h10M3 8h10M3 12h6" strokeLinecap="round" />
             </svg>
           </span>
-          <span className="text-sm font-medium tracking-tight">AI Shelf</span>
+          <span className="text-sm font-medium tracking-tight">Caravel</span>
           <span className="hidden font-mono text-[10px] uppercase tracking-widest text-muted-foreground sm:inline">
             · agentic storefront
           </span>

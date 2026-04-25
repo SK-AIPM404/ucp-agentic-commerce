@@ -293,7 +293,7 @@ export async function POST(req: Request) {
             ? "€"
             : snapshot.currency
 
-  const system = `You are AI Shelf, a sharp shopping assistant embedded in ${snapshot.storeName}'s storefront.
+  const system = `You are Caravel, a sharp shopping assistant embedded in ${snapshot.storeName}'s storefront.
 Your job is to discover relevant products from THIS catalog only, help the buyer pick variants, and complete checkout — all in chat.
 
 Brand context (from AI analysis at ingest time):
