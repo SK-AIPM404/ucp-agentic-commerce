@@ -36,14 +36,18 @@ export function UcpExplorer({ store, sessionId }: Props) {
   >({})
   const [copied, setCopied] = useState<string | null>(null)
 
-  // The first product id from the audit acts as a real example for the
-  // product-detail and checkout-create endpoints.
-  const sampleProductId = useMemo(() => {
-    // sampleTitles is provided in IngestResult — but the product id isn't.
-    // We use a deterministic placeholder if the explorer was opened before
-    // a real session exists; the manifest itself doesn't expose ids either.
-    return "<product_id>"
-  }, [])
+  // Real product + variant ids surfaced by the ingest audit, so endpoints
+  // that take an {id} or a line_item can be exercised against live data
+  // instead of placeholder strings (which produce 404 "Product not found").
+  const sampleProductId = useMemo(
+    () => store.samples?.productId ?? "<product_id>",
+    [store.samples?.productId],
+  )
+  const sampleVariantId = useMemo(
+    () => store.samples?.variantId ?? "<variant_id>",
+    [store.samples?.variantId],
+  )
+  const hasRealSample = Boolean(store.samples?.productId)
 
   const storeQs = `?store=${encodeURIComponent(store.domain)}`
 
@@ -68,9 +72,13 @@ export function UcpExplorer({ store, sessionId }: Props) {
       id: "product",
       label: "Product Detail",
       method: "GET",
-      path: `/ucp/v1/catalog/products/${sampleProductId}${storeQs}`,
-      description:
-        "Returns a single UCP item with all variants, options, images, and a normalized price.",
+      path: `/ucp/v1/catalog/products/${encodeURIComponent(sampleProductId)}${storeQs}`,
+      description: hasRealSample
+        ? `Returns a single UCP item with all variants, options, images, and a normalized price. Sample id: ${sampleProductId}`
+        : "Returns a single UCP item with all variants, options, images, and a normalized price.",
+      unavailableReason: hasRealSample
+        ? undefined
+        : "Ingest a store first so a real product id is available.",
     },
     {
       id: "checkout-create",
@@ -81,9 +89,16 @@ export function UcpExplorer({ store, sessionId }: Props) {
         "Opens a buyer-bound session containing line items, discount, shipping, and totals.",
       body: {
         line_items: [
-          { product_id: "<product_id>", variant_id: "<variant_id>", quantity: 1 },
+          {
+            product_id: sampleProductId,
+            variant_id: sampleVariantId,
+            quantity: 1,
+          },
         ],
       },
+      unavailableReason: hasRealSample
+        ? undefined
+        : "Ingest a store first so real product + variant ids are available.",
     },
     {
       id: "checkout-get",

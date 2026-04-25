@@ -17,6 +17,11 @@ export type IngestAnalysis = {
   brand?: IngestBrandProfile
 }
 
+export type IngestSamples = {
+  productId: string
+  variantId: string
+} | null
+
 export type IngestResult = {
   ok: true
   domain: string
@@ -25,6 +30,9 @@ export type IngestResult = {
   currency: string
   productCount: number
   sampleTitles: string[]
+  /** Real product + variant ids from the ingested catalog, used by the UCP
+   *  Explorer to exercise /catalog/products/{id} and checkout endpoints. */
+  samples?: IngestSamples
   categories: string[]
   analysis?: IngestAnalysis
   capabilities: string[]

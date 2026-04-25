@@ -42,6 +42,20 @@ export async function POST(req: Request) {
       ),
     ].slice(0, 12)
 
+    // Surface real product + variant ids so the UCP Explorer can exercise
+    // /catalog/products/{id} and /checkout-sessions endpoints with live data
+    // instead of placeholder strings. Prefer the first available item.
+    const firstAvailable =
+      snapshot.items.find((i) => i.available && i.variants?.length > 0) ||
+      snapshot.items[0]
+    const samples = firstAvailable
+      ? {
+          productId: firstAvailable.id,
+          variantId:
+            firstAvailable.variants?.[0]?.id ?? firstAvailable.id,
+        }
+      : null
+
     return Response.json({
       ok: true,
       domain: snapshot.domain,
@@ -50,6 +64,7 @@ export async function POST(req: Request) {
       currency: snapshot.currency,
       productCount: snapshot.items.length,
       sampleTitles: snapshot.items.slice(0, 5).map((i) => i.title),
+      samples,
       categories,
       analysis: snapshot.analysis,
       capabilities: ["catalog", "checkout", "fulfillment"],
