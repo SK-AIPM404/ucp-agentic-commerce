@@ -19,12 +19,28 @@ export async function GET(req: Request) {
     )
   }
 
-  const origin = `${url.protocol}//${url.host}`
+  // Build service_endpoint from the *real* request host so the manifest is
+  // valid in any deployment (Vercel preview, prod, ngrok, etc.) — never
+  // fall back to localhost.
+  const fwdHost = req.headers.get("x-forwarded-host")
+  const fwdProto = req.headers.get("x-forwarded-proto")
+  const host = fwdHost || req.headers.get("host") || url.host
+  const proto = fwdProto || (host.startsWith("localhost") ? "http" : "https")
+  const origin = `${proto}://${host}`
+
+  // merchant.id must be a plain hostname — no protocol, no path, no brackets.
+  const merchantId = (() => {
+    try {
+      return new URL(snapshot.storeUrl).hostname
+    } catch {
+      return snapshot.domain
+    }
+  })()
 
   const manifest = {
     ucp_version: "2026-04-08",
     merchant: {
-      id: snapshot.domain,
+      id: merchantId,
       name: snapshot.storeName,
       home_url: snapshot.storeUrl,
       currency: snapshot.currency,

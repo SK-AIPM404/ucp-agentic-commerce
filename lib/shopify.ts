@@ -78,15 +78,26 @@ export type StoreSnapshot = {
   items: UCPItem[]
 }
 
-/** Normalize raw user input into a clean Shopify origin. */
+/** Normalize raw user input into a clean Shopify origin.
+ * Accepts: bare domains, https URLs, markdown-formatted links like
+ * "[www.allbirds.com](http://www.allbirds.com)", and trailing slashes/paths.
+ */
 export function normalizeStoreUrl(input: string): string {
   let url = input.trim()
   if (!url) throw new Error("Empty URL")
+
+  // Strip markdown link wrapper "[label](href)" → take the href.
+  const md = url.match(/^\[[^\]]+\]\((https?:\/\/[^)]+)\)$/i)
+  if (md) url = md[1]
+
+  // Strip surrounding angle brackets, quotes, or whitespace.
+  url = url.replace(/^[<"'\s]+|[>"'\s]+$/g, "")
+
   if (!/^https?:\/\//i.test(url)) {
     url = "https://" + url
   }
   const u = new URL(url)
-  return `${u.protocol}//${u.host}`
+  return `${u.protocol}//${u.hostname}${u.port ? ":" + u.port : ""}`
 }
 
 /** Strip simple HTML tags to derive plain text descriptions. */
@@ -197,17 +208,22 @@ export function transformProductsToUCP(
   })
 }
 
-/** Fetch a public Shopify catalog up to `maxPages * 250` products. */
+/** Fetch a public Shopify catalog. Pulls page 1 with limit=250; if page 1
+ * returns exactly 250 products, also pulls page 2. Hard-capped at 500 total.
+ */
+const MAX_PRODUCTS = 500
+const PAGE_SIZE = 250
+
 export async function fetchShopifyCatalog(
   storeUrl: string,
   opts?: { maxPages?: number; signal?: AbortSignal },
 ): Promise<{ snapshot: StoreSnapshot; raw: ShopifyProduct[] }> {
-  const maxPages = opts?.maxPages ?? 2
+  const maxPages = Math.min(opts?.maxPages ?? 2, MAX_PRODUCTS / PAGE_SIZE)
   const origin = normalizeStoreUrl(storeUrl)
 
   const all: ShopifyProduct[] = []
   for (let page = 1; page <= maxPages; page++) {
-    const url = `${origin}/products.json?limit=250&page=${page}`
+    const url = `${origin}/products.json?limit=${PAGE_SIZE}&page=${page}`
     let res: Response
     try {
       res = await fetch(url, {
@@ -247,8 +263,12 @@ export async function fetchShopifyCatalog(
     }
     const products = data.products || []
     all.push(...products)
-    if (products.length < 250) break
+    // Stop if this page wasn't full (no more pages to fetch) or we've hit the cap.
+    if (products.length < PAGE_SIZE) break
+    if (all.length >= MAX_PRODUCTS) break
   }
+  // Ensure we never exceed the hard cap.
+  if (all.length > MAX_PRODUCTS) all.length = MAX_PRODUCTS
 
   if (all.length === 0) {
     throw new Error(
@@ -258,7 +278,8 @@ export async function fetchShopifyCatalog(
 
   const items = transformProductsToUCP(all)
   const currency = inferCurrency(all, origin)
-  const domain = new URL(origin).host
+  // Plain hostname only — no port, no protocol, no markdown wrapping.
+  const domain = new URL(origin).hostname
 
   const snapshot: StoreSnapshot = {
     domain,
